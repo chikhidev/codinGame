@@ -6,12 +6,39 @@ import math
 
 player_idx = int(input())
 nb_games = int(input())
-prioroty:int = 0 # iwa hada dyal priority, this variable is gonna be used to make benifits based on the game index
+priority:int = 0 # iwa hada dyal priority, this variable is gonna be used to make benefits based on the game index
 """
     if the game index matches the priority, the benefits gonna be 2 not just 1 !!!!!
 """
 games: list = ["racing", "archery", "skateboarding", "diving"]
-scores:list = [0, 0, 0] # g s b
+scores:list = [0, 0, 0] # gold silver bronze medals respectively
+diving_wrong_moves = 0
+remaining_to_shoot = 15
+diving_moves = ""
+switcher = {
+        "U": "UP",
+        "D": "DOWN",
+        "R": "RIGHT",
+        "L": "LEFT"
+    }
+back_switcher = {
+        "UP": "U",
+        "DOWN": "D",
+        "RIGHT": "R",
+        "LEFT": "L"
+    }
+moves_power = {
+    "RIGHT": 3,
+    "DOWN": 2,
+    "LEFT": 1,
+    "UP": 0
+}
+medals = {
+    "racing": [0, 0, 0],
+    "archery": [0, 0, 0],
+    "skateboarding": [0, 0, 0],
+    "diving": [0, 0, 0]
+}
 
 def debug(args):
     print(args, file=sys.stderr, flush=True)
@@ -39,20 +66,37 @@ def racing(gpu, reg_0: int = 0, others_poses = []) -> str:
     RIGHT -> runs three blocks pos -> pos + 3
     """
     
-    importance = 2
+    urgency = False
+    importance = 1
+    
+    # if reg_0 <= others_poses[0] and reg_0 <= others_poses[1]:
+    #     return {
+    #         "name": "RIGHT",
+    #         "benefits": 0,
+    #         "owner": "racing"
+    #     } # give up the game so give opotunity to others games
     
     # urgent cases
-    if reg_0 <= others_poses[0] and reg_0 <= others_poses[1]: importance = 4
+    if reg_0 <= others_poses[0] or reg_0 >= others_poses[1]:
+        importance = 1
+        urgency = True
     
-    if not barriers_remaining(gpu, reg_0): return {"name": "RIGHT", "benefits": importance}
+    if scores[1] >= 4:
+        return {
+            "name": "RIGHT",
+            "benefits": 1,
+            "owner": "racing",
+            "urgent": True
+        }
+    
+    if not barriers_remaining(gpu, reg_0): return {"name": "RIGHT", "benefits": importance, "owner": "racing", "urgent": urgency}
     if distance_to_barrier(gpu, reg_0) >= 3:
-        return {"name": "RIGHT", "benefits": importance}
+        return {"name": "RIGHT", "benefits": importance, "owner": "racing", "urgent": urgency}
     elif distance_to_barrier(gpu, reg_0) >= 1:
-        return {"name": "DOWN", "benefits": importance}
+        return {"name": "DOWN", "benefits": importance, "owner": "racing", "urgent": urgency}
     elif distance_to_barrier(gpu, reg_0) >= 1:
-        return {"name": "LEFT", "benefits": importance}
-    return {"name": "UP", "benefits": 2}
-# racing scope ----------------------------------
+        return {"name": "LEFT", "benefits": importance, "owner": "racing", "urgent": urgency}
+    return {"name": "UP", "benefits": importance, "owner": "racing", "urgent": urgency}
 
 
 # archery scope ----------------------------------
@@ -62,23 +106,28 @@ def archery(gpu: str, x: int, y: int):
     x -> player's position
     y -> player's position
     """
+    global remaining_to_shoot
     wind_strength = int(gpu[0])
     debug("Inside archery scope")
     debug(f"wind_strength: {wind_strength}")
     
     # urgent cases
-    if x < -10: return {"name": "RIGHT", "benefits": 2}
-    if x > 10: return {"name": "LEFT", "benefits": 2}
-    if y < -10: return {"name": "UP", "benefits": 2}
-    if y > 10: return {"name": "DOWN", "benefits": 2}
+    if x < -(2 * (20 / 3)): return {"name": "RIGHT", "benefits": 1, "owner": "archery", "urgent": True}
+    if x > (2 * (20 / 3)): return {"name": "LEFT", "benefits": 1, "owner": "archery", "urgent": True}
+    if y < -(2 * (20 / 3)): return {"name": "UP", "benefits": 1, "owner": "archery", "urgent": True}
+    if y > (2 * (20 / 3)): return {"name": "DOWN", "benefits": 1, "owner": "archery", "urgent": True}
     
-    if x < 0: return {"name": "RIGHT", "benefits": 1}
-    if x > 0: return {"name": "LEFT", "benefits": 1}
-    if y < 0: return {"name": "DOWN", "benefits": 1}
-    if y > 0: return {"name": "UP", "benefits": 1}
-    return {"name": "RIGHT", "benefits": 0}
+    if remaining_to_shoot > 3:
+        remaining_to_shoot -= 1
+        return {"name": "RIGHT", "benefits": 0, "owner": "archery"} # we have time until shoot
+    
+    remaining_to_shoot -= 1
+    if x < 0: return {"name": "RIGHT", "benefits": 1, "owner": "archery"}
+    if x > 0: return {"name": "LEFT", "benefits": 1, "owner": "archery"}
+    if y < 0: return {"name": "DOWN", "benefits": 1, "owner": "archery"}
+    if y > 0: return {"name": "UP", "benefits": 1, "owner": "archery"}
+    return {"name": "RIGHT", "benefits": 0, "owner": "archery"}
         
-
 
 # skateboarding scope ----------------------------------
 def skateboarding(gpu: str, pos: int, other_poses = []):
@@ -89,20 +138,78 @@ def skateboarding(gpu: str, pos: int, other_poses = []):
     debug("Inside skateboarding scope")
     
     # urgent cases
-    if pos < other_poses[0] and pos < other_poses[1]: return {"name": "RIGHT", "benefits": 2}
-       
-    return {"name": "DOWN", "benefits": 1}
+    if pos < other_poses[0] or pos < other_poses[1]: return {"name": "RIGHT", "benefits": 1, "owner": "skateboarding", "urgent": True}
+    
+    if pos < other_poses[0] and pos < other_poses[1]: return {"name": "RIGHT", "benefits": 0, "owner": "skateboarding"}   
+    
+    return {
+        "name": switcher.get(gpu[0]),
+        "benefits": 1,
+        "owner": "skateboarding"
+    }
 
 
-def update_recommended_actions(recommended_actions, action, game_index, priority):
-    if len(recommended_actions) > 0:
-        for i in range(len(recommended_actions)):
-            if recommended_actions[i]["name"] == action["name"]:
-                recommended_actions[i]["benefits"] += action["benefits"]
-                return
-    new = {"name": action["name"], "benefits": action["benefits"]}
-    recommended_actions.append(new)
+# diving scope ----------------------------------
+def diving(gpu: str, pos: int):
+    """ diving scope 
+    gpu -> contains moves to make, example: UUDRLLDUDR
+    pos -> player's position
+    """
+    debug("Inside diving scope")
+    
+    urgency = False    
+    importance = 1
+    
+    if diving_wrong_moves > 3:
+        urgency = True
+        importance = 1
 
+    # if scores[0] > 5:
+    #     urgency = True
+    #     importance = 8
+    
+    global diving_moves
+    diving_moves += gpu[0]
+    return {
+        "name": switcher.get(gpu[0]),
+        "benefits": importance,
+        "owner": "diving",
+        "urgent": urgency
+    }
+
+
+def update_recommended_actions(recommended_actions, action, game_index: int, priority: int):
+    benefits = action["benefits"]
+    owner = action["owner"]
+    
+    for recommended_action in recommended_actions:
+        owner = recommended_action["owner"]
+        urgent = recommended_action["urgent"]
+        name = recommended_action["name"]
+
+        if name == action["name"]:
+            recommended_action["benefits"] += benefits
+            recommended_action["urgent"] = action.get("urgent", False)
+            return
+
+        if (owner == "racing" or owner == "skateboarding") and not urgent and moves_power.get(action["name"]) > moves_power.get(name):
+            recommended_action["name"] = action["name"]
+            recommended_action["benefits"] += benefits
+            recommended_action["urgent"] = action.get("urgent", False)
+            return
+
+    new_action = {"name": action["name"], "benefits": benefits, "owner": action["owner"], "urgent": action.get("urgent", False)}
+    recommended_actions.append(new_action)
+
+def poor(recommended_actions):
+    # poor_game = "racing"
+    # for game in medals:
+    #     if medals[game][0] < medals[poor_game][0] and medals[game][1] < medals[poor_game][1]:
+    #         poor_game = game
+    # for action in recommended_actions:
+    #     if action["owner"] == poor_game:
+    #         return action["name"]
+    return max(recommended_actions, key=lambda x: x["benefits"])["name"]
 
 def col_sum(matrix)-> list:
     """ 
@@ -110,10 +217,9 @@ def col_sum(matrix)-> list:
     """
     res = [0, 0, 0]
     for row in matrix:
-        for i in range(0, 3):
+        for i in range(0, len(row)):
             res[i] += int(row[i])
     return res
-            
 
 # game loop
 while True:
@@ -140,13 +246,37 @@ while True:
         reg_1 = int(inputs[2])
         reg_2 = int(inputs[3])
         if gpu == "GAME_OVER":
-            prioroty = prioroty + 1 if prioroty < 2 else 0 # 7ydha mn be3d
+            #track position of player and give him medal:
+            if i == 0:
+                if reg_0 < reg_1 and reg_0 < reg_2: medals["racing"][2] += 1
+                elif reg_0 > reg_1 and reg_0 > reg_2: medals["racing"][0] += 1
+                else: medals["racing"][1] += 1
+            if i == 1:
+                remaining_to_shoot = 15
+                x, y = reg_0, reg_1
+                if x > (2 * (20 / 3)) or x < -(2 * (20 / 3)) or y > (2 * (20 / 3)) or y < -(2 * (20 / 3)): medals["archery"][2] += 1
+                elif x > (20 / 3) or x < -(20 / 3) or y > (20 / 3) or y < -(20 / 3): medals["archery"][1] += 1
+                else: medals["archery"][0] += 1
+            if i == 2:
+                if reg_0 < reg_1 and reg_0 < reg_2: medals["skateboarding"][2] += 1
+                elif reg_0 > reg_1 and reg_0 > reg_2: medals["skateboarding"][0] += 1
+                else: medals["skateboarding"][1] += 1
+            if i == 3:
+                diving_wrong_moves = 0
+                if diving_wrong_moves == 0: medals["diving"][0] += 1
+            if i == priority:
+                priority = priority + 1 if priority < 3 else 0
             continue # here we check if a game finished go ahead to the next game
-        if i == 0: update_recommended_actions(recommended_actions, racing(gpu, reg_0, [reg_1, reg_2]), i, prioroty)
-        if i == 1: update_recommended_actions(recommended_actions, archery(gpu, reg_0, reg_1), i, prioroty)
-        if i == 2: update_recommended_actions(recommended_actions, skateboarding(gpu, reg_0, [reg_1, reg_2]), i, prioroty)
+        if i == 0: update_recommended_actions(recommended_actions, racing(gpu, reg_0, [reg_1, reg_2]), i, priority)
+        if i == 1: update_recommended_actions(recommended_actions, archery(gpu, reg_0, reg_1), i, priority)
+        if i == 2: update_recommended_actions(recommended_actions, skateboarding(gpu, reg_0, [reg_1, reg_2]), i, priority)
+        if i == 3: update_recommended_actions(recommended_actions, diving(gpu, reg_0), i, priority)
 
-    debug(f"Scores: {scores}")
-    # debug(f"Doubling is offered for -> {games[prioroty]}")
-    if len(recommended_actions) > 0: print(max(recommended_actions, key=lambda x: x["benefits"])["name"])
-    else: print("UP")
+    chosen = "RIGHT"
+    if len(recommended_actions) > 0:
+        chosen = poor(recommended_actions)
+        debug(f"Poor: {chosen}")
+        # find actions owners that have less golds and selvers and give them the oppo
+    debug(f"Medals: {medals}")
+    debug(f"Diving wrong moves: {diving_wrong_moves}")
+    print(chosen)
